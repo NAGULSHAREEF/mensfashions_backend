@@ -20,15 +20,24 @@ jobs:
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-    - name: Copy Files to EC2 via SCP
+    - name: Archive Code
       run: |
-        scp -i ~/.ssh/id_rsa -r . ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/mensfashions_backend/
+        tar --exclude='.git' --exclude='node_modules' -czf app.tar.gz .
 
-    - name: Restart mensfashions Node App on EC2
+    - name: Upload Code to EC2
+      run: |
+        scp -i ~/.ssh/id_rsa app.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/
+
+    - name: Extract and Restart App on EC2
       run: |
         ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-          cd /home/ubuntu/mensfashions_backend/
-          npm install
+          cd /home/ubuntu
+          rm -rf mensfashions_backend
+          mkdir -p mensfashions_backend
+          tar -xzf app.tar.gz -C mensfashions_backend
+          rm app.tar.gz
+          cd mensfashions_backend
+          npm ci
           pm2 describe mensfashions > /dev/null
           if [ $? -eq 0 ]; then
             pm2 restart mensfashions
