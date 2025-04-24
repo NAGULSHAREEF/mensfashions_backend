@@ -1,47 +1,28 @@
-name: Deploy to EC2
+name: Deploy to Vercel
 
 on:
   push:
     branches:
-      - main
+      - main  # Only deploys from the main branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
+    - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Setup SSH Key
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+    - name: Install Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 21  # Match this to your project's Node.js version
 
-    - name: Archive Code
-      run: |
-        tar --exclude='.git' --exclude='node_modules' -czf app.tar.gz .
+    - name: Install dependencies
+      run: npm install
 
-    - name: Upload Code to EC2
-      run: |
-        scp -i ~/.ssh/id_rsa app.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/
+    - name: Build project
+      run: npm run build
 
-    - name: Extract and Restart App on EC2
-      run: |
-        ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-          cd /home/ubuntu
-          rm -rf mensfashions_backend
-          mkdir -p mensfashions_backend
-          tar -xzf app.tar.gz -C mensfashions_backend
-          rm app.tar.gz
-          cd mensfashions_backend
-          npm ci
-          pm2 describe mensfashions > /dev/null
-          if [ $? -eq 0 ]; then
-            pm2 restart mensfashions
-          else
-            pm2 start server.js --name mensfashions
-          fi
-        EOF
+    - name: Deploy to Vercel
+      run: npx vercel --prod --token ${{ secrets.VERCEL_TOKEN }} --yes
