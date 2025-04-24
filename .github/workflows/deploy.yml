@@ -1,28 +1,50 @@
-name: Deploy to Vercel
+name: Deploy Node.js Backend with Nginx
 
 on:
   push:
     branches:
-      - main  # Only deploys from the main branch
+      - main  # Only deploys on push to main
 
 jobs:
   deploy:
+    name: Deploy to EC2
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    # Step 1: Checkout the repository
+    - name: Checkout Repository
       uses: actions/checkout@v3
 
-    - name: Install Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: 21  # Match this to your project's Node.js version
+    # Step 2: Decode SSH private key
+    - name: Decode SSH private key
+      run: |
+        echo "${{ secrets.EC2_SSH_KEY }}" | base64 -d > backend_pair.pem
+        chmod 600 backend_pair.pem
 
-    - name: Install dependencies
-      run: npm install
+    # Step 3: Set Deployment Variables (only for main)
+    - name: Set Deployment Variables
+      run: |
+        echo "DEPLOY_DIR=/home/ec2-user/future-quest-backend" >> $GITHUB_ENV
+        echo "APP_NAME=future-quest-backend-app" >> $GITHUB_ENV
+        echo "PORT=3000" >> $GITHUB_ENV
 
-    - name: Build project
-      run: npm run build
+    # Step 4: Copy project files to EC2
+    - name: Copy project files to EC2
+      run: |
+        scp -i backend_pair.pem -o StrictHostKeyChecking=no -r ./ ec2-user@${{ secrets.EC2_HOST }}:$DEPLOY_DIR/
 
-    - name: Deploy to Vercel
-      run: npx vercel --prod --token ${{ secrets.VERCEL_TOKEN }} --yes
+    # Step 5: SSH into EC2 and deploy
+    - name: SSH into EC2 and deploy
+      run: |
+        ssh -i backend_pair.pem -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_HOST }} << EOF
+          cd $DEPLOY_DIR
+
+          npm install
+
+          pm2 restart $APP_NAME || pm2 start src/index.ts --name $APP_NAME -- --PORT=$PORT
+
+          sudo systemctl restart nginx
+
+          sudo systemctl status nginx || echo "Nginx service failed to restart"
+          pm2 list
+        EOF
