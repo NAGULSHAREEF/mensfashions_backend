@@ -3,7 +3,7 @@ name: Deploy Node.js Backend with Nginx
 on:
   push:
     branches:
-      - main  # Only deploys on push to main
+      - main  # Deploy only on push to the 'main' branch
 
 jobs:
   deploy:
@@ -15,25 +15,25 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    # Step 2: Decode SSH private key
+    # Step 2: Decode SSH private key (base64-encoded private key stored in secrets)
     - name: Decode SSH private key
       run: |
         echo "${{ secrets.EC2_SSH_KEY }}" | base64 -d > backend_pair.pem
         chmod 600 backend_pair.pem
 
-    # Step 3: Set Deployment Variables (only for main)
+    # Step 3: Set Deployment Variables for main branch
     - name: Set Deployment Variables
       run: |
-        echo "DEPLOY_DIR=/home/ubuntu/future-quest-backend" >> $GITHUB_ENV
-        echo "APP_NAME=future-quest-backend-app" >> $GITHUB_ENV
-        echo "PORT=3000" >> $GITHUB_ENV
+        echo "DEPLOY_DIR=/home/ubuntu/mensfashions_backend" >> $GITHUB_ENV
+        echo "APP_NAME=mensfashion" >> $GITHUB_ENV  # Your app's name for PM2
+        echo "PORT=3000" >> $GITHUB_ENV  # Port for main branch
 
     # Step 4: Copy project files to EC2
     - name: Copy project files to EC2
       run: |
         scp -i backend_pair.pem -o StrictHostKeyChecking=no -r ./ ubuntu@${{ secrets.EC2_HOST }}:$DEPLOY_DIR/
 
-    # Step 5: SSH into EC2 and deploy
+    # Step 5: SSH into EC2 and deploy the Node.js app
     - name: SSH into EC2 and deploy
       run: |
         ssh -i backend_pair.pem -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << EOF
@@ -43,10 +43,15 @@ jobs:
           # Install dependencies
           npm install
 
-          # Restart or start the Node.js app using PM2
-          pm2 restart $APP_NAME || pm2 start src/index.ts --name $APP_NAME -- --PORT=$PORT
+          # Restart or start the Node.js app using PM2 (app name: mensfashion)
+          pm2 describe $APP_NAME > /dev/null
+          if [ $? -eq 0 ]; then
+            pm2 restart $APP_NAME  # Restart if already running
+          else
+            pm2 start server.js --name $APP_NAME -- --PORT=$PORT  # Start if not running
+          fi
 
-          # Restart Nginx to reflect new changes
+          # Restart Nginx to ensure new changes are reflected
           sudo systemctl restart nginx
 
           # Verify Nginx and PM2 status for debugging
